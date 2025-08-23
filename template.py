@@ -1,7 +1,3 @@
-# GemRush3D — a small 3D grid collector built to match the CSE423-style PyOpenGL template
-# UPDATE: First-person default camera, third-person orbit only when CHEAT (C) is ON.
-# Player is now a RED ROLLING BALL, with jumping on SPACE. No new GL state calls added.
-
 from __future__ import annotations
 import random, time, math
 from typing import List, Tuple
@@ -10,51 +6,50 @@ from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
 
-# ------------------------------
 # Config
-# ------------------------------
-GRID_SIZE = 20               # grid spans from -GRID_SIZE..+GRID_SIZE in X and Y
+
+GRID_SIZE = 20              
 CELL = 1.0
-PLAYER_DIAM = 0.9            # ball diameter
+PLAYER_DIAM = 0.9            
 PLAYER_RADIUS = PLAYER_DIAM * 0.5
 GEM_RADIUS = 0.4
 OBSTACLE_SIZE = 1.0
 
-BASE_SPEED = 7.0             # world units per second
+BASE_SPEED = 7.0             
 BOOST_MULTIPLIER = 2.0
-BOOST_DURATION = 5.0         # seconds
+BOOST_DURATION = 5.0         
 
-JUMP_V0 = 6.5                # initial jump velocity (wu/s)
-GRAVITY = -18.0              # gravity (wu/s^2)
-EYE_OFFSET = 0.5             # camera eye above player center in FP
+JUMP_V0 = 6.5                
+GRAVITY = -18.0              
+EYE_OFFSET = 0.5             
 
-START_TIME = 60              # seconds
-LEVEL_THRESHOLDS = [50, 120, 220, 360, 520]  # score gates
-TIME_PENALTY_ON_LEVEL = 5    # seconds removed on each level-up
+START_TIME = 60              
+LEVEL_THRESHOLDS = [50, 120, 220, 360, 520]  
+TIME_PENALTY_ON_LEVEL = 5    
 
-# Gem types: (name, (r,g,b), points)
+
 GEM_TYPES = [
     ("Red",    (1.0, 0.2, 0.2), 10),
     ("Blue",   (0.2, 0.4, 1.0), 20),
     ("Yellow", (1.0, 0.9, 0.2), 30),
 ]
-# Special speed-boost gem (spawns occasionally)
+
 BOOST_CHANCE = 0.06
 BOOST_TYPE = ("Boost", (0.1, 1.0, 0.1), 0)
 
-# Camera parameters
-cam_yaw = 0.0     # left/right in degrees (used by FP and TP)
-cam_pitch = 10.0  # up/down for FP; limited
-cam_dist = 32.0   # used only in cheat 3rd-person
 
-# Player state
+cam_yaw = 0.0     
+cam_pitch = 10.0  
+cam_dist = 32.0   
+
+
 player_x = 0.0
 player_y = 0.0
-player_z = PLAYER_RADIUS     # sits on ground
-vz = 0.0                     # vertical velocity
+player_z = PLAYER_RADIUS     
+vz = 0.0                     
 on_ground = True
 
-# Rolling visuals
+
 roll_angle = 0.0
 roll_axis_x = 1.0
 roll_axis_y = 0.0
@@ -62,28 +57,28 @@ roll_axis_y = 0.0
 player_speed = BASE_SPEED
 boost_until = 0.0
 
-# Game state
+
 score = 0
 level = 1
 remaining = START_TIME
 running = True
-cheat_mode = False  # when ON: third-person orbit AND gem highlight
+cheat_mode = False  
 
-# Spawns
+
 gems: List[Tuple[float,float,Tuple[float,float,float],int,bool]] = []
-# gem tuple: (x, y, color, points, is_boost)
 
-obstacles: List[Tuple[float,float]] = []  # list of (x, y) centers
 
-# Input
+obstacles: List[Tuple[float,float]] = []  
+
+
 keys = set()
 
-# Timing
+
 _last_time = None
 
-# ------------------------------
+
 # Utilities
-# ------------------------------
+
 def clamp(v, a, b):
     return max(a, min(b, v))
 
@@ -97,9 +92,9 @@ def dist2(ax, ay, bx, by):
     dx, dy = ax - bx, ay - by
     return dx*dx + dy*dy
 
-# ------------------------------
+
 # Spawning
-# ------------------------------
+
 def random_xy() -> Tuple[float,float]:
     return (
         random.randint(-GRID_SIZE, GRID_SIZE) * CELL,
@@ -108,7 +103,7 @@ def random_xy() -> Tuple[float,float]:
 
 def spawn_gem(force_boost: bool=False):
     global gems
-    # decide type
+    
     if force_boost:
         gtype = BOOST_TYPE
         is_boost = True
@@ -119,7 +114,7 @@ def spawn_gem(force_boost: bool=False):
         else:
             gtype = random.choice(GEM_TYPES)
             is_boost = False
-    # find a free location (not on obstacle or player)
+    
     for _ in range(200):
         x, y = random_xy()
         if dist2(x, y, player_x, player_y) < (PLAYER_RADIUS + GEM_RADIUS + 0.2)**2:
@@ -148,9 +143,9 @@ def setup_initial_spawns():
         spawn_gem()
     ensure_at_least_one_gem()
 
-# ------------------------------
+
 # Level progression
-# ------------------------------
+
 def level_from_score(sc: int) -> int:
     lvl = 1
     for t in LEVEL_THRESHOLDS:
@@ -174,9 +169,9 @@ def apply_level_changes(prev_level: int, new_level: int):
         spawn_gem()
     remaining = max(0, remaining - TIME_PENALTY_ON_LEVEL)
 
-# ------------------------------
-# HUD text helper — matches template vibe
-# ------------------------------
+
+# HUD 
+
 
 def draw_text(x: float, y: float, s: str):
     glMatrixMode(GL_PROJECTION)
@@ -188,9 +183,9 @@ def draw_text(x: float, y: float, s: str):
     for ch in s:
         glutBitmapCharacter(GLUT_BITMAP_9_BY_15, ord(ch))
 
-# ------------------------------
+
 # Rendering pieces
-# ------------------------------
+
 
 def draw_ground_grid():
     glColor3f(0.2, 0.2, 0.2)
@@ -209,7 +204,7 @@ def draw_ground_grid():
 
 
 def draw_player_ball():
-    # rolling animation: rotate around axis perpendicular to motion
+    
     glPushMatrix()
     glTranslatef(player_x, player_y, player_z)
     glRotatef(roll_angle, roll_axis_y, -roll_axis_x, 0.0)
@@ -255,14 +250,9 @@ def draw_hud():
     if time.time() < boost_until:
         draw_text(-0.20, -0.95, "SPEED BOOST!")
 
-# ------------------------------
+
 # Main render
-# ------------------------------
 
-# In GemRush3D, adjust only the camera logic to be a third-person follow camera (a.k.a. "chase camera").
-# It follows the red ball from behind, at a fixed offset.
-
-# ... (rest of the file unchanged up to display()) ...
 
 def display():
     glClearColor(0.05, 0.06, 0.08, 1.0)
@@ -275,12 +265,11 @@ def display():
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
 
-    # Third-person chase camera, always behind the player
-    # Compute direction from cam_yaw
+
     yaw_rad = math.radians(cam_yaw)
     dirx = math.cos(yaw_rad)
     diry = math.sin(yaw_rad)
-    # Camera sits some distance behind and above the player
+   
     cam_back = 10.0
     cam_up = 6.0
     eye_x = player_x - dirx * cam_back
@@ -293,7 +282,7 @@ def display():
         0.0, 0.0, 1.0,
     )
 
-    # Ground plane
+   
     glColor3f(0.08, 0.10, 0.12)
     glPushMatrix()
     glTranslatef(0.0, 0.0, -0.01)
@@ -311,12 +300,9 @@ def display():
 
     glutSwapBuffers()
 
-# ... rest of file unchanged ...
 
-
-# ------------------------------
 # Update
-# ------------------------------
+
 
 def try_move(dx: float, dy: float):
     global player_x, player_y
@@ -367,7 +353,7 @@ def update():
     if now < boost_until:
         player_speed *= BOOST_MULTIPLIER
 
-    # movement relative to camera yaw
+    
     if running:
         move_x = 0.0
         move_y = 0.0
@@ -379,7 +365,7 @@ def update():
             mag = math.sqrt(move_x*move_x + move_y*move_y)
             move_x /= mag
             move_y /= mag
-            # rotate move by camera yaw so W moves forward in view direction
+            
             yaw = math.radians(cam_yaw)
             fwdx = math.cos(yaw); fwdy = math.sin(yaw)
             leftx = -fwdy; lefty = fwdx
@@ -387,7 +373,7 @@ def update():
             diry = fwdy*move_y + lefty*move_x
             oldx, oldy = player_x, player_y
             try_move(dirx * player_speed * dt, diry * player_speed * dt)
-            # rolling angle update by distance traveled / radius (in degrees)
+            
             dx = player_x - oldx; dy = player_y - oldy
             dist = math.sqrt(dx*dx + dy*dy)
             if dist > 0.0:
@@ -395,7 +381,7 @@ def update():
                 roll_angle = (roll_angle + (dist / PLAYER_RADIUS) * (180.0 / math.pi)) % 360.0
         collect_overlaps()
 
-    # jumping & gravity
+   
     if not on_ground:
         vz += GRAVITY * dt
         player_z = max(PLAYER_RADIUS, player_z + vz * dt)
@@ -404,7 +390,7 @@ def update():
             vz = 0.0
             on_ground = True
 
-    # level progression
+    
     new_level = level_from_score(score)
     if new_level != level:
         prev = level
@@ -413,9 +399,9 @@ def update():
 
     glutPostRedisplay()
 
-# ------------------------------
+
 # Input
-# ------------------------------
+
 
 def on_key(key: bytes, x: int, y: int):
     global cheat_mode, running, vz, on_ground
@@ -424,7 +410,7 @@ def on_key(key: bytes, x: int, y: int):
         cheat_mode = not cheat_mode
     elif key == b"r":
         restart_game()
-    elif key == b" ":  # SPACE to jump
+    elif key == b" ":  
         if running and on_ground:
             on_ground = False
             vz = JUMP_V0
@@ -439,18 +425,18 @@ def on_key_up(key: bytes, x: int, y: int):
 
 def on_special(key: int, x: int, y: int):
     global cam_yaw, cam_pitch
-    if key == 100:  # left
+    if key == 100:  
         cam_yaw -= 4
-    elif key == 102:  # right
+    elif key == 102:  
         cam_yaw += 4
-    elif key == 101:  # up
+    elif key == 101:  
         cam_pitch = clamp(cam_pitch + 3, -35.0, 70.0)
-    elif key == 103:  # down
+    elif key == 103:  
         cam_pitch = clamp(cam_pitch - 3, -35.0, 70.0)
 
-# ------------------------------
+
 # Reset
-# ------------------------------
+
 
 def restart_game():
     global player_x, player_y, player_z, vz, on_ground
@@ -464,7 +450,7 @@ def restart_game():
     vz = 0.0
     on_ground = True
 
-    # reset roll
+    
     global roll_angle
     roll_angle = 0.0
 
@@ -481,9 +467,9 @@ def restart_game():
 
     setup_initial_spawns()
 
-# ------------------------------
+
 # Bootstrap
-# ------------------------------
+
 
 def main():
     glutInit()
