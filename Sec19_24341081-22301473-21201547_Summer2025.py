@@ -32,7 +32,6 @@ LAVA_MAX_R = 4.0
 LAVA_TTL = 8.0
 LAVA_BASE = 2
 
-
 LEVEL_GEMS = 5
 
 GEM_TYPES = [
@@ -49,6 +48,8 @@ cam_dist = 12.0
 CAM_DIST_MIN = 6.0
 CAM_DIST_MAX = 40.0
 CAM_ZOOM_STEP = 1.0
+FP_EYE_OFFSET = 0.35
+camera_mode = 0
 
 WIN_W, WIN_H = 1280, 720
 
@@ -301,6 +302,7 @@ def draw_ground_grid():
         glScalef((2*GRID_SIZE+1)*CELL, 0.05, 0.02)
         glutSolidCube(1.0)
         glPopMatrix()
+
 def draw_skybox():
     glDepthMask(GL_FALSE)
     glPushMatrix()
@@ -464,8 +466,13 @@ def draw_minimap():
 def _apply_camera():
     yaw = math.radians(cam_yaw); pitch = math.radians(cam_pitch)
     dirx = math.cos(pitch)*math.cos(yaw); diry = math.cos(pitch)*math.sin(yaw); dirz = math.sin(pitch)
-    eye_x = player_x - dirx * cam_dist; eye_y = player_y - diry * cam_dist; eye_z = player_z + dirz * cam_dist
-    gluLookAt(eye_x, eye_y, eye_z, player_x, player_y, player_z, 0.0, 0.0, 1.0)
+    if camera_mode == 0:
+        eye_x = player_x - dirx * cam_dist; eye_y = player_y - diry * cam_dist; eye_z = player_z + dirz * cam_dist
+        gluLookAt(eye_x, eye_y, eye_z, player_x, player_y, player_z, 0.0, 0.0, 1.0)
+    else:
+        eye_x = player_x; eye_y = player_y; eye_z = player_z + FP_EYE_OFFSET
+        cx = eye_x + dirx; cy = eye_y + diry; cz = eye_z + dirz
+        gluLookAt(eye_x, eye_y, eye_z, cx, cy, cz, 0.0, 0.0, 1.0)
 
 def display():
     global WIN_W, WIN_H, popup_msg, popup_until
@@ -527,20 +534,6 @@ def try_move(dx: float, dy: float):
                 if hit_y and player_z < top + PLAYER_RADIUS - CLIMB_MARGIN:
                     blocked_y = True
         i += 1
-
-    # i = 0
-    # while i < len(obstacles):
-    #     ox, oy = obstacles[i]
-    #     top = 1.0
-    #     hit_x = aabb_overlap(nx, player_y, PLAYER_DIAM, ox, oy, OBSTACLE_SIZE)
-    #     hit_y = aabb_overlap(player_x, ny, PLAYER_DIAM, ox, oy, OBSTACLE_SIZE)
-    #     if hit_x:
-    #         if player_z < top + PLAYER_RADIUS - CLIMB_MARGIN:
-    #             blocked_x = True
-    #     if hit_y:
-    #         if player_z < top + PLAYER_RADIUS - CLIMB_MARGIN:
-    #             blocked_y = True
-    #     i += 1
 
     for (rx, ry, sx, sy, sz) in obstacles_rect:
         hit_x = rect_overlap(nx, player_y, PLAYER_DIAM, PLAYER_DIAM, rx, ry, sx, sy)
@@ -696,7 +689,7 @@ def update():
 
 
 def on_key(key: bytes, x: int, y: int):
-    global cheat_mode, running, vz, on_ground, cam_dist
+    global cheat_mode, running, vz, on_ground, cam_dist, camera_mode
     keys.add(key)
     if key == b"c":
         globals()['cheat_mode'] = not globals()['cheat_mode']
@@ -708,7 +701,8 @@ def on_key(key: bytes, x: int, y: int):
             globals()['vz'] = JUMP_V0
     elif key == b"p":
         reset_player_position()
-
+    elif key == b"v":
+        camera_mode = 1 - camera_mode
     elif key in (b'+', b'=',):
         globals()['cam_dist'] = clamp(globals()['cam_dist'] - CAM_ZOOM_STEP, CAM_DIST_MIN, CAM_DIST_MAX)
     elif key in (b'-', b'_',):
