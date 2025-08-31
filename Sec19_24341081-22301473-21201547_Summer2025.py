@@ -48,8 +48,6 @@ cam_dist = 12.0
 CAM_DIST_MIN = 6.0
 CAM_DIST_MAX = 40.0
 CAM_ZOOM_STEP = 1.0
-FP_EYE_OFFSET = 0.35
-camera_mode = 0
 
 WIN_W, WIN_H = 1280, 720
 
@@ -77,8 +75,6 @@ treasure_boxes: List[Tuple[float,float,str]] = []
 lava_pools: List[Tuple[float,float,float,float]] = []
 lava_dmg_accum = 0.0
 
-
-
 gems_collected = 0
 
 keys = set()
@@ -86,6 +82,15 @@ _last_time = None
 
 popup_msg = ""
 popup_until = 0.0
+
+first_person_mode = False  # New global flag for camera mode
+
+enemy_active = False
+enemy_x = 0.0
+enemy_y = 0.0
+enemy_z = 0.5
+ENEMY_SPEED = 7.5  # slightly faster than player base speed
+ENEMY_GUN_RANGE = 1.2
 
 def clamp(v, a, b):
     return max(a, min(b, v))
@@ -137,8 +142,6 @@ def ground_height_at(x, y):
         h = max(h, t)
     return h
 
-
-
 def pos_hits_any_obstacle(x, y):
     if any(aabb_overlap(x, y, GEM_RADIUS*2, ox, oy, OBSTACLE_SIZE) for (ox, oy) in obstacles): return True
     if any(rect_overlap(x, y, GEM_RADIUS*2, GEM_RADIUS*2, rx, ry, sx, sy) for (rx,ry,sx,sy,sz) in obstacles_rect): return True
@@ -172,7 +175,6 @@ def spawn_gem(force_boost: bool=False):
 def spawn_gem_at(x, y, col, pts, is_boost=False):
     gems.append((x, y, col, pts, is_boost))
 
-
 def spawn_lava_pool():
     for _ in range(200):
         x, y = rand_xy_avoiding_player(min_dist=5.0)
@@ -196,8 +198,6 @@ def draw_lava():
         glTranslatef(lx, ly, 0.06)
         gluDisk(quad, 0.0, lr, 64, 1)
         glPopMatrix()
-
-
 
 def spawn_treasure_box():
     for _ in range(200):
@@ -259,8 +259,6 @@ def setup_initial_spawns():
         spawn_treasure_box()
     for _ in range(min(LAVA_BASE, MAX_LAVA)):
         spawn_lava_pool()
-
-
     if not gems:
         spawn_gem()
 
@@ -387,7 +385,6 @@ def draw_obstacles():
         glutSolidCube(1.0)
         glPopMatrix()
 
-
 def draw_gems():
     for x, y, col, pts, is_boost in gems:
         r, g, b = (0.1, 1.0, 0.1) if (cheat_mode or is_boost) else col
@@ -464,15 +461,28 @@ def draw_minimap():
     glMatrixMode(GL_MODELVIEW); glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW)
 
 def _apply_camera():
-    yaw = math.radians(cam_yaw); pitch = math.radians(cam_pitch)
-    dirx = math.cos(pitch)*math.cos(yaw); diry = math.cos(pitch)*math.sin(yaw); dirz = math.sin(pitch)
-    if camera_mode == 0:
-        eye_x = player_x - dirx * cam_dist; eye_y = player_y - diry * cam_dist; eye_z = player_z + dirz * cam_dist
-        gluLookAt(eye_x, eye_y, eye_z, player_x, player_y, player_z, 0.0, 0.0, 1.0)
+    global first_person_mode
+    yaw = math.radians(cam_yaw)
+    pitch = math.radians(cam_pitch)
+
+    dirx = math.cos(pitch) * math.cos(yaw)
+    diry = math.cos(pitch) * math.sin(yaw)
+    dirz = math.sin(pitch)
+
+    if first_person_mode:
+        # Camera at player position + eye height offset, looking forward in player direction
+        eye_x = player_x
+        eye_y = player_y
+        eye_z = player_z + 0.4  # a little above player's center, like eyes height
+        center_x = player_x + math.cos(yaw)
+        center_y = player_y + math.sin(yaw)
+        center_z = player_z + 0.4 + math.sin(pitch)
+        gluLookAt(eye_x, eye_y, eye_z, center_x, center_y, center_z, 0.0, 0.0, 1.0)
     else:
-        eye_x = player_x; eye_y = player_y; eye_z = player_z + FP_EYE_OFFSET
-        cx = eye_x + dirx; cy = eye_y + diry; cz = eye_z + dirz
-        gluLookAt(eye_x, eye_y, eye_z, cx, cy, cz, 0.0, 0.0, 1.0)
+        eye_x = player_x - dirx * cam_dist
+        eye_y = player_y - diry * cam_dist
+        eye_z = player_z + dirz * cam_dist
+        gluLookAt(eye_x, eye_y, eye_z, player_x, player_y, player_z, 0.0, 0.0, 1.0)
 
 def display():
     global WIN_W, WIN_H, popup_msg, popup_until
@@ -567,7 +577,6 @@ def try_move(dx: float, dy: float):
     if not blocked_y:
         player_y = ny
 
-
 def collect_overlaps():
     global score, boost_until, gems_collected, popup_msg, popup_until
     to_remove = []
@@ -654,12 +663,10 @@ def update():
     while len(lava_pools) < target_lava:
         spawn_lava_pool()
 
-
     if not on_ground:
         vz += GRAVITY * dt
         player_z = player_z + vz * dt
         gh = 0.0 if cheat_mode else ground_height_at(player_x, player_y)
-
 
         if player_z <= gh + PLAYER_RADIUS + 1e-4:
             player_z = gh + PLAYER_RADIUS
@@ -668,13 +675,11 @@ def update():
     else:
         gh = 0.0 if cheat_mode else ground_height_at(player_x, player_y)
 
-
         player_z = gh + PLAYER_RADIUS
     
     collect_overlaps()
     if random.random() < 0.008 and len(treasure_boxes) < 4:
         spawn_treasure_box()
-    
 
     j = len(breaking_obs) - 1
     while j >= 0:
@@ -687,9 +692,8 @@ def update():
         j -= 1
     glutPostRedisplay()
 
-
 def on_key(key: bytes, x: int, y: int):
-    global cheat_mode, running, vz, on_ground, cam_dist, camera_mode
+    global cheat_mode, running, vz, on_ground, cam_dist
     keys.add(key)
     if key == b"c":
         globals()['cheat_mode'] = not globals()['cheat_mode']
@@ -701,16 +705,12 @@ def on_key(key: bytes, x: int, y: int):
             globals()['vz'] = JUMP_V0
     elif key == b"p":
         reset_player_position()
-    elif key == b"v":
-        camera_mode = 1 - camera_mode
     elif key in (b'+', b'=',):
         globals()['cam_dist'] = clamp(globals()['cam_dist'] - CAM_ZOOM_STEP, CAM_DIST_MIN, CAM_DIST_MAX)
     elif key in (b'-', b'_',):
         globals()['cam_dist'] = clamp(globals()['cam_dist'] + CAM_ZOOM_STEP, CAM_DIST_MIN, CAM_DIST_MAX)
     elif key == b'q':
         os._exit(0)
-
-
 
 def on_key_up(key: bytes, x: int, y: int):
     if key in keys:
@@ -726,6 +726,12 @@ def on_special(key: int, x: int, y: int):
         cam_pitch = clamp(cam_pitch - 3, -35.0, 70.0)
     elif key == GLUT_KEY_DOWN:
         cam_pitch = clamp(cam_pitch + 3, -35.0, 70.0)
+
+def on_mouse(button, state, x, y):
+    global first_person_mode
+    if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
+        # Toggle first_person_mode on each left click press
+        first_person_mode = not first_person_mode
 
 def restart_game():
     global player_x, player_y, player_z, vz, on_ground, player_speed, boost_until
@@ -745,7 +751,6 @@ def reset_player_position():
     vz = 0.0
     on_ground = True
 
-
 def reshape(w: int, h: int):
     global WIN_W, WIN_H
     WIN_W = max(200, w); WIN_H = max(200, h)
@@ -753,7 +758,182 @@ def reshape(w: int, h: int):
 
 def init_gl():
     glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL); glClearDepth(1.0); glShadeModel(GL_SMOOTH)
+def spawn_enemy():
+    global enemy_x, enemy_y, enemy_z, enemy_active
+    enemy_active = True
+    enemy_x, enemy_y = rand_xy_avoiding_player(min_dist=GRID_SIZE*0.9)
+    enemy_z = 0.5
 
+def draw_enemy():
+    if not enemy_active:
+        return
+    # Draw body
+    glPushMatrix()
+    glTranslatef(enemy_x, enemy_y, enemy_z)
+    glColor3f(0.18, 0.06, 0.13)  # dark
+    glutSolidCube(0.8)
+    # Head
+    glPushMatrix()
+    glTranslatef(0.0, 0.0, 0.55)
+    glColor3f(0.85, 0.65, 0.35)
+    glutSolidSphere(0.3, 20, 14)
+    glPopMatrix()
+    # Gun (simple cylinder pointing at player)
+    dx = player_x - enemy_x
+    dy = player_y - enemy_y
+    angle = math.degrees(math.atan2(dy, dx))
+    glPushMatrix()
+    glRotatef(angle, 0, 0, 1)
+    glTranslatef(0.27, 0, 0.40)
+    glColor3f(0.2, 0.3, 0.9)
+    quad = gluNewQuadric()
+    gluCylinder(quad, 0.08, 0.07, 0.8, 12, 2)
+    glPopMatrix()
+    glPopMatrix()
+
+def move_enemy(dt):
+    global enemy_x, enemy_y
+    if not enemy_active:
+        return
+    dx = player_x - enemy_x
+    dy = player_y - enemy_y
+    dist = math.hypot(dx, dy)
+    if dist < 0.001:
+        return
+    speed = ENEMY_SPEED * dt
+    move_dx = (dx/dist)*speed if dist > speed else dx
+    move_dy = (dy/dist)*speed if dist > speed else dy
+    # Try move, but if obstacle skip (no pathfinding here, just for demo)
+    attempted_x = clamp(enemy_x + move_dx, -GRID_SIZE*CELL, GRID_SIZE*CELL)
+    attempted_y = clamp(enemy_y + move_dy, -GRID_SIZE*CELL, GRID_SIZE*CELL)
+    if not pos_hits_any_obstacle(attempted_x, attempted_y):
+        enemy_x = attempted_x
+        enemy_y = attempted_y
+
+def check_enemy_shot():
+    global running, popup_msg, popup_until
+    if not enemy_active:
+        return
+    # If enemy close enough, shoot ("game over"):
+    dist = math.hypot(player_x - enemy_x, player_y - enemy_y)
+    if dist <= ENEMY_GUN_RANGE:
+        running = False
+        popup_msg = "GAME OVER: Shot by Enemy!"
+        popup_until = time.time() + 3.0
+
+# Update: include enemy logic after level 3
+def update():
+    global _last_time, remaining, running, player_speed, player_z, vz, on_ground, enemy_active
+    now = time.time()
+    if _last_time is None:
+        globals()['_last_time'] = now
+        return
+    dt = now - _last_time
+    globals()['_last_time'] = now
+    if running:
+        remaining = max(0.0, remaining - dt)
+        if remaining <= 0.0:
+            running = False
+    player_speed = BASE_SPEED
+    if now < boost_until:
+        player_speed *= BOOST_MULTIPLIER
+    if running:
+        move_x = 0.0; move_y = 0.0
+        if b"w" in keys: move_y += 1
+        if b"s" in keys: move_y -= 1
+        if b"a" in keys: move_x += 1
+        if b"d" in keys: move_x -= 1
+        if move_x != 0 or move_y != 0:
+            mag = math.sqrt(move_x*move_x + move_y*move_y)
+            move_x /= mag; move_y /= mag
+            yaw = math.radians(cam_yaw)
+            fwdx = math.cos(yaw); fwdy = math.sin(yaw)
+            leftx = -fwdy; lefty = fwdx
+            dirx = fwdx*move_y + leftx*move_x
+            diry = fwdy*move_y + lefty*move_x
+            try_move(dirx * player_speed * dt, diry * player_speed * dt)
+    if in_lava(player_x, player_y):
+        player_speed *= LAVA_SLOW_MULT
+        globals()['lava_dmg_accum'] = lava_dmg_accum + LAVA_DPS * dt
+        dec = int(lava_dmg_accum)
+        if dec > 0:
+            globals()['score'] = max(0, score - dec)
+            globals()['lava_dmg_accum'] = lava_dmg_accum - dec
+    k = len(lava_pools) - 1
+    while k >= 0:
+        lx, ly, lr, lt = lava_pools[k]
+        lt -= dt
+        if lt <= 0.0:
+            lava_pools.pop(k)
+        else:
+            lava_pools[k] = (lx, ly, lr, lt)
+        k -= 1
+    target_lava = min(MAX_LAVA, LAVA_BASE + level//2)
+    while len(lava_pools) < target_lava:
+        spawn_lava_pool()
+    if not on_ground:
+        vz += GRAVITY * dt
+        player_z = player_z + vz * dt
+        gh = 0.0 if cheat_mode else ground_height_at(player_x, player_y)
+        if player_z <= gh + PLAYER_RADIUS + 1e-4:
+            player_z = gh + PLAYER_RADIUS
+            vz = 0.0
+            on_ground = True
+    else:
+        gh = 0.0 if cheat_mode else ground_height_at(player_x, player_y)
+        player_z = gh + PLAYER_RADIUS
+    collect_overlaps()
+    if random.random() < 0.008 and len(treasure_boxes) < 4:
+        spawn_treasure_box()
+    j = len(breaking_obs) - 1
+    while j >= 0:
+        bx, by, bs, ttl = breaking_obs[j]
+        ttl -= dt
+        bs = max(0.0, ttl / BREAK_TTL)
+        breaking_obs[j] = (bx, by, bs, ttl)
+        if ttl <= 0.0:
+            breaking_obs.pop(j)
+        j -= 1
+    # Enemy logic after level 3
+    if level >= 4:
+        if not enemy_active:
+            spawn_enemy()
+        move_enemy(dt)
+        check_enemy_shot()
+    glutPostRedisplay()
+
+# Add `draw_enemy()` to display routine
+def display():
+    global WIN_W, WIN_H, popup_msg, popup_until
+    glClearColor(0.05,0.06,0.08,1.0); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+    glViewport(0,0,WIN_W,WIN_H); glMatrixMode(GL_PROJECTION); glLoadIdentity(); gluPerspective(60.0,float(WIN_W)/float(WIN_H),0.1,1000.0)
+    glMatrixMode(GL_MODELVIEW); glLoadIdentity()
+    draw_skybox()
+    _apply_camera()
+    draw_lava()
+    glColor3f(0.08,0.10,0.12); glPushMatrix(); glTranslatef(0.0,0.0,-0.01); glScalef((2*GRID_SIZE+1)*CELL,(2*GRID_SIZE+1)*CELL,0.02); glutSolidCube(1.0); glPopMatrix()
+    draw_ground_grid(); draw_obstacles(); draw_gems(); draw_treasure_boxes(); draw_player_bowl()
+    draw_ground_tiles()
+    draw_perimeter_pillars()
+    draw_enemy()  # <-- add this line
+    draw_hud()
+    draw_minimap()
+    if popup_msg and time.time() < popup_until:
+        draw_text_screen(-0.15, -0.2, popup_msg)
+    glutSwapBuffers()
+
+# Add "enemy_deactivate" to game restart:
+def restart_game():
+    global player_x, player_y, player_z, vz, on_ground, player_speed, boost_until
+    global score, level, remaining, running, gems_collected, _last_time, cam_yaw, cam_pitch, cam_dist, enemy_active
+    player_x = 0.0; player_y = 0.0; player_z = PLAYER_RADIUS; vz = 0.0; on_ground = True
+    player_speed = BASE_SPEED; boost_until = 0.0
+    score = 0; level = 1; remaining = START_TIME; running = True; gems_collected = 0
+    cam_yaw = 0.0; cam_pitch = 10.0; cam_dist = 12.0
+    _last_time = None
+    enemy_active = False
+    setup_initial_spawns()
+    
 def main():
     glutInit()
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH)
@@ -770,6 +950,7 @@ def main():
     except Exception:
         pass
     glutSpecialFunc(on_special)
+    glutMouseFunc(on_mouse)  # Register mouse click handler
     glutReshapeFunc(reshape)
     glutMainLoop()
 
